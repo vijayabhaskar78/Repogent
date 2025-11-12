@@ -104,7 +104,8 @@ def post_comment(token, repo, issue_number, body):
     url = f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments"
     headers = {
         'Authorization': f'Bearer {token}',
-        'Accept': 'application/vnd.github+json'
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'Repogent-Bot/1.0'
     }
     
     response = requests.post(url, headers=headers, json={'body': body}, timeout=30)
