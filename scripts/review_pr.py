@@ -13,10 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Repogent PR Review Script
+Version: 1.0.0
+Analyzes pull request diffs using Groq LLM and provides structured code review feedback.
+"""
+
 import os
 import sys
 import json
 from groq import Groq
+
+__version__ = "1.0.0"
 
 # Set up Groq credentials
 if not os.environ.get("GROQ_API_KEY"):
