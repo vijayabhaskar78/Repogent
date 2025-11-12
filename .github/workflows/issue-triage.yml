@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     name: Issue Management
     
-    # Skip if comment is from bot itself
+    # Skip if comment is from bot itself or mentions @repogent (handled by community assistant)
     if: |
       (github.event_name == 'issues') ||
-      (github.event_name == 'issue_comment' && !contains(github.event.comment.user.login, 'bot'))
+      (github.event_name == 'issue_comment' && !contains(github.event.comment.user.login, 'bot') && !contains(github.event.comment.body, '@repogent'))
     
     steps:
       - name: Checkout code

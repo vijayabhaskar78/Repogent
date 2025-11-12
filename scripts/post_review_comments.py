@@ -58,13 +58,13 @@ def parse_diff_for_line_mapping(diff_text):
             match = re.match(r'@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@', line)
             if match:
                 current_line = int(match.group(1))
-        elif current_file and line.startswith('+') and not line.startswith('+++'):
-            # This is an added line
+        elif current_file and current_line > 0 and line.startswith('+') and not line.startswith('+++'):
+            # This is an added line (only process if we've seen a hunk header)
             file_lines[current_file]['added'].append(current_line)
             file_lines[current_file]['all'].append(current_line)
             current_line += 1
-        elif current_file and not line.startswith('-'):
-            # Context line (not removed)
+        elif current_file and current_line > 0 and not line.startswith('-'):
+            # Context line (not removed) - only process if we've seen a hunk header
             file_lines[current_file]['context'].append(current_line)
             file_lines[current_file]['all'].append(current_line)
             current_line += 1
@@ -165,7 +165,8 @@ def post_review_comments(github_token, repo, pr_number, commit_sha, reviews, dif
     api_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
     headers = {
         'Authorization': f'Bearer {github_token}',
-        'Accept': 'application/vnd.github.v3+json'
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Repogent-Bot/1.0'
     }
     
     review_data = {

@@ -16,6 +16,12 @@
 - **Intelligent responses** to issue comments
 - **Context-aware** explanations
 
+### 💬 Community Assistant (NEW!)
+- **Ask questions about the codebase** using `@repogent`
+- **Get code references** with highlighted permalinks
+- **Navigate the repository** with AI guidance
+- **Understand how features work** with code examples
+
 ## 🚀 Quick Start
 
 ### 1. Copy to Your Repository
@@ -51,20 +57,40 @@ Select: ✅ **Read and write permissions**
 - **PR Review**: Open a PR → Get inline comments automatically
 - **Issue Triage**: Create issue → Auto-labeled with explanation  
 - **Smart Responses**: Comment on issue → AI responds
+- **Community Help**: Mention `@repogent` with your question → Get answers with code references
+
+### 🤖 Community Assistant Examples
+
+Ask questions about the codebase by mentioning `@repogent`:
+
+```
+@repogent How does the diff parsing work?
+@repogent Where is the severity emoji logic implemented?
+@repogent Show me how to add a new label
+@repogent What files handle GitHub API calls?
+```
+
+The bot will:
+1. 🔍 Search the codebase for relevant code
+2. 📍 Provide GitHub permalinks to specific lines
+3. 💡 Explain how things work with context
+4. 📝 Show code snippets with syntax highlighting
 
 ## 📂 Repository Structure
 
 ```
 .github/workflows/
-  ├── pr-review.yml       # PR review automation
-  └── issue-triage.yml    # Issue management
+  ├── pr-review.yml              # PR review automation
+  ├── issue-triage.yml           # Issue management
+  └── community-assistant.yml    # Community Q&A helper
 scripts/
-  ├── review_pr.py        # PR analysis
-  ├── post_review_comments.py
-  ├── triage_issue.py     # Issue classification
-  └── respond_to_comment.py
+  ├── review_pr.py               # PR analysis
+  ├── post_review_comments.py    # Post inline PR comments
+  ├── triage_issue.py            # Issue classification
+  ├── respond_to_comment.py      # Issue comment responses
+  └── community_assistant.py     # Codebase Q&A with references
 config/
-  └── labels.json         # Label configuration
+  └── labels.json                # Label configuration
 ```
 
 ## ⚙️ Configuration
@@ -79,8 +105,9 @@ Edit `config/labels.json`:
 
 ## 🔧 Models
 
-- **PR Review**: llama-3.1-70b-versatile
-- **Issue Triage**: llama-3.1-8b-instant  
+- **PR Review**: llama-3.3-70b-versatile
+- **Issue Triage**: llama-3.3-70b-versatile
+- **Community Assistant**: llama-3.3-70b-versatile  
 
 ## 📄 License
 
