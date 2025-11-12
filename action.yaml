@@ -20,7 +20,7 @@ inputs:
   model:
     description: 'Groq model for PR reviews'
     required: false
-    default: 'llama-3.1-70b-versatile'
+    default: 'llama-3.3-70b-versatile'
   max-length:
     description: 'Maximum prompt length for PR reviews'
     required: false
@@ -34,7 +34,7 @@ inputs:
   issue-model:
     description: 'Groq model for issue triage'
     required: false
-    default: 'llama-3.1-8b-instant'
+    default: 'llama-3.3-70b-versatile'
 
 outputs:
   result:

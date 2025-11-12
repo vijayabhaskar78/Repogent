@@ -25,7 +25,7 @@ if not os.environ.get("GROQ_API_KEY"):
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-model_engine = os.environ.get("MODEL", "llama-3.1-70b-versatile")
+model_engine = os.environ.get("MODEL", "llama-3.3-70b-versatile")
 commit_title = os.environ.get("COMMIT_TITLE", "")
 commit_message = os.environ.get("COMMIT_BODY", "")
 try:

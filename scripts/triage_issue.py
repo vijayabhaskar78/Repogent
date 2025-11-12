@@ -51,7 +51,7 @@ Classify this issue and respond with JSON only."""
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ],
-            model=os.getenv('GROQ_MODEL', 'llama-3.1-8b-instant'),
+            model=os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'),
             max_tokens=512,
             temperature=0
         )

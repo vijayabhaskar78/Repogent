@@ -84,7 +84,7 @@ Please provide a helpful response to this comment."""
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ],
-            model=os.getenv('GROQ_MODEL', 'llama-3.1-70b-versatile'),
+            model=os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'),
             max_tokens=1024,
             temperature=0.7
         )
