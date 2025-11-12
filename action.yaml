@@ -1,0 +1,148 @@
+# action.yaml
+name: 'Repogent Complete - AI PR Review & Issue Triage'
+author: vijayabhaskar78
+description: 'AI-powered code reviews and issue management using Groq. Automatically reviews PRs with inline comments and triages issues with smart labeling.'
+
+branding:
+  icon: 'code'
+  color: 'purple'
+
+inputs:
+  groq-key:
+    description: 'The Groq API key'
+    required: true
+  github-token:
+    description: 'GitHub token for API access'
+    required: false
+    default: ${{ github.token }}
+  
+  # PR Review inputs
+  model:
+    description: 'Groq model for PR reviews'
+    required: false
+    default: 'llama-3.1-70b-versatile'
+  max-length:
+    description: 'Maximum prompt length for PR reviews'
+    required: false
+    default: '8000'
+  review-title:
+    description: 'Title for PR review comments'
+    required: false
+    default: '# 🤖 Code Review by Repogent AI'
+  
+  # Issue Triage inputs
+  issue-model:
+    description: 'Groq model for issue triage'
+    required: false
+    default: 'llama-3.1-8b-instant'
+
+outputs:
+  result:
+    description: 'Result of the action'
+    value: ${{ steps.determine-action.outputs.result }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: pip install -r ${{ github.action_path }}/requirements.txt
+      shell: bash
+
+    - name: Determine Action Type
+      id: determine-action
+      shell: bash
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          echo "action_type=pr_review" >> $GITHUB_OUTPUT
+          echo "result=Running PR Review" >> $GITHUB_OUTPUT
+        elif [ "${{ github.event_name }}" = "issues" ]; then
+          echo "action_type=issue_triage" >> $GITHUB_OUTPUT
+          echo "result=Running Issue Triage" >> $GITHUB_OUTPUT
+        elif [ "${{ github.event_name }}" = "issue_comment" ]; then
+          echo "action_type=issue_comment" >> $GITHUB_OUTPUT
+          echo "result=Responding to Comment" >> $GITHUB_OUTPUT
+        else
+          echo "action_type=none" >> $GITHUB_OUTPUT
+          echo "result=No action needed" >> $GITHUB_OUTPUT
+        fi
+
+    # ============= PR REVIEW =============
+    - name: Generate PR Diff
+      if: steps.determine-action.outputs.action_type == 'pr_review'
+      shell: bash
+      run: |
+        git diff origin/${{ github.base_ref }}...HEAD > diff.txt
+        if [ ! -s diff.txt ]; then
+          echo "No changes detected"
+          exit 0
+        fi
+
+    - name: Analyze PR Changes
+      if: steps.determine-action.outputs.action_type == 'pr_review'
+      shell: bash
+      env:
+        GROQ_API_KEY: ${{ inputs.groq-key }}
+        MODEL: ${{ inputs.model }}
+        COMMIT_TITLE: ${{ github.event.pull_request.title }}
+        COMMIT_BODY: ${{ github.event.pull_request.body }}
+        MAX_LENGTH: ${{ inputs.max-length }}
+      run: |
+        python ${{ github.action_path }}/scripts/review_pr.py < diff.txt > reviews.json
+
+    - name: Post PR Review Comments
+      if: steps.determine-action.outputs.action_type == 'pr_review'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+        REVIEW_TITLE: ${{ inputs.review-title }}
+      run: |
+        python ${{ github.action_path }}/scripts/post_review_comments.py
+
+    # ============= ISSUE TRIAGE =============
+    - name: Triage Issue
+      if: steps.determine-action.outputs.action_type == 'issue_triage'
+      shell: bash
+      env:
+        GROQ_API_KEY: ${{ inputs.groq-key }}
+        GROQ_MODEL: ${{ inputs.issue-model }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        ISSUE_NUMBER: ${{ github.event.issue.number }}
+        ISSUE_TITLE: ${{ github.event.issue.title }}
+        ISSUE_BODY: ${{ github.event.issue.body }}
+      run: |
+        python ${{ github.action_path }}/scripts/triage_issue.py
+
+    # ============= ISSUE COMMENT RESPONSE =============
+    - name: Respond to Comment
+      if: steps.determine-action.outputs.action_type == 'issue_comment'
+      shell: bash
+      env:
+        GROQ_API_KEY: ${{ inputs.groq-key }}
+        GROQ_MODEL: ${{ inputs.model }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        ISSUE_NUMBER: ${{ github.event.issue.number }}
+        COMMENT_BODY: ${{ github.event.comment.body }}
+        ISSUE_TITLE: ${{ github.event.issue.title }}
+        ISSUE_BODY: ${{ github.event.issue.body }}
+      run: |
+        # Skip if comment is from bot
+        if [[ "${{ github.event.comment.user.login }}" == *"bot"* ]]; then
+          echo "Skipping bot comment"
+          exit 0
+        fi
+        python ${{ github.action_path }}/scripts/respond_to_comment.py

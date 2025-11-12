@@ -1,0 +1,10 @@
+{
+  "labels": [
+    "Bug",
+    "Enhancement",
+    "Question",
+    "Documentation",
+    "Help Wanted"
+  ],
+  "default_label": "Question"
+}

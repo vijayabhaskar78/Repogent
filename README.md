@@ -1,0 +1,94 @@
+# Repogent Complete - Unified GitHub Repository Assistant
+
+🤖 A comprehensive GitHub bot that combines PR review and issue management capabilities, all running as GitHub Actions.
+
+## ✨ Features
+
+### 🔍 PR Review (from pr-reviewer)
+- **Inline code comments** on specific lines
+- **Severity levels**: 🔴 Critical, 🟡 Warning, 🟢 Suggestion  
+- **Smart fix suggestions** for every issue
+- **Lightning-fast** reviews powered by Groq
+
+### 🎯 Issue Management (from repogent-issue-manager)
+- **Auto-triage & labeling** of new issues
+- **AI-powered classification** (Bug, Enhancement, Question)
+- **Intelligent responses** to issue comments
+- **Context-aware** explanations
+
+## 🚀 Quick Start
+
+### 1. Copy to Your Repository
+
+```bash
+# Copy workflows
+cp -r .github/workflows /path/to/your/repo/.github/
+
+# Copy scripts
+cp -r scripts /path/to/your/repo/
+
+# Copy config
+cp -r config /path/to/your/repo/
+
+# Copy requirements
+cp requirements.txt /path/to/your/repo/
+```
+
+### 2. Add Secret
+
+Go to: **Settings** → **Secrets** → **Actions**
+
+Add: `GROQ_API_KEY` from https://console.groq.com
+
+### 3. Enable Permissions
+
+**Settings** → **Actions** → **General** → **Workflow permissions**
+
+Select: ✅ **Read and write permissions**
+
+## 📖 Usage
+
+- **PR Review**: Open a PR → Get inline comments automatically
+- **Issue Triage**: Create issue → Auto-labeled with explanation  
+- **Smart Responses**: Comment on issue → AI responds
+
+## 📂 Repository Structure
+
+```
+.github/workflows/
+  ├── pr-review.yml       # PR review automation
+  └── issue-triage.yml    # Issue management
+scripts/
+  ├── review_pr.py        # PR analysis
+  ├── post_review_comments.py
+  ├── triage_issue.py     # Issue classification
+  └── respond_to_comment.py
+config/
+  └── labels.json         # Label configuration
+```
+
+## ⚙️ Configuration
+
+Edit `config/labels.json`:
+```json
+{
+  "labels": ["Bug", "Enhancement", "Question", "Documentation"],
+  "default_label": "Question"
+}
+```
+
+## 🔧 Models
+
+- **PR Review**: llama-3.1-70b-versatile
+- **Issue Triage**: llama-3.1-8b-instant  
+
+## 📄 License
+
+Apache 2.0 License
+
+## 👤 Author
+
+vijayabhaskar78
+
+---
+**⚡ Powered by Groq**
