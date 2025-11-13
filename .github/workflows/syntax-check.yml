@@ -1,0 +1,25 @@
+name: Python Syntax Check
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ test/* ]
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Check Python syntax
+        run: |
+          python -m py_compile test_cicd_demo.py
+          echo "Syntax check passed!"
