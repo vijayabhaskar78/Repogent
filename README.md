@@ -29,12 +29,13 @@
 - **Decision logging** and pattern recognition
 - **Event routing** to appropriate agents
 
-### 🔍 PR Reviewer
-- **Inline code comments** on specific lines
+### 🔍 PR Reviewer (Enhanced)
+- **Inline code comments** on specific lines with detailed context
 - **Severity levels**: 🔴 Critical, 🟡 Warning, 🟢 Suggestion  
-- **Smart fix suggestions** for every issue
+- **Smart fix suggestions** for every issue detected
 - **Build failure analysis** (receives from CI/CD Agent)
-- **Lightning-fast** reviews powered by Groq
+- **Lightning-fast** reviews powered by Groq LLM (llama-3.3-70b-versatile)
+- **Multi-agent coordination** for comprehensive code analysis
 
 ### 🎯 Issue Manager
 - **Auto-triage & labeling** of new issues
