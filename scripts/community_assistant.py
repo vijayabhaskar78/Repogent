@@ -11,11 +11,21 @@ from pathlib import Path
 from groq import Groq
 import requests
 
-__version__ = "1.0.0"
+# Import shared constants
+from config_constants import (
+    MAX_FILE_SIZE,
+    MAX_TOTAL_INDEX_SIZE,
+    MAX_INDEX_FILES,
+    CONTEXT_LINES,
+    MAX_SEARCH_RESULTS,
+    MAX_RESPONSE_LENGTH,
+    HTTP_TIMEOUT_SECONDS,
+    CODE_EXTENSIONS,
+    SKIP_DIRS,
+    MODEL_COMMUNITY_QA
+)
 
-# File extensions to index
-CODE_EXTENSIONS = {'.py', '.js', '.ts', '.yaml', '.yml', '.json', '.md', '.txt'}
-MAX_FILE_SIZE = 100000  # 100KB limit per file
+__version__ = "1.0.0"
 
 
 def index_codebase(repo_path='.'):
@@ -26,11 +36,11 @@ def index_codebase(repo_path='.'):
     indexed_files = {}
     repo_path = Path(repo_path)
     total_size = 0
-    max_total_size = 50 * 1024 * 1024  # 50MB total limit
-    max_files = 500  # Maximum 500 files
+    max_total_size = MAX_TOTAL_INDEX_SIZE
+    max_files = MAX_INDEX_FILES
     
-    # Directories to skip
-    skip_dirs = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', 'dist', 'build'}
+    # Use shared skip_dirs from config
+    skip_dirs = SKIP_DIRS
     
     for file_path in repo_path.rglob('*'):
         # Check if we've hit limits
@@ -53,8 +63,8 @@ def index_codebase(repo_path='.'):
             if file_path.stat().st_size > MAX_FILE_SIZE:
                 continue
             
-            # Read file content
-            with open(file_path, 'r', encoding='utf-8') as f:
+            # Read file content with error handling for encoding issues
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
             
             # Get relative path from repo root
@@ -77,7 +87,15 @@ def index_codebase(repo_path='.'):
     return indexed_files
 
 
-def search_codebase(indexed_files, query, max_results=5):
+def ranges_overlap(range1, range2):
+    """Check if two (start, end) ranges overlap or are too close"""
+    s1, e1 = range1
+    s2, e2 = range2
+    # Overlapping or within CONTEXT_LINES of each other
+    return not (e1 + CONTEXT_LINES < s2 or e2 + CONTEXT_LINES < s1)
+
+
+def search_codebase(indexed_files, query, max_results=MAX_SEARCH_RESULTS):
     """
     Search indexed files for relevant code sections.
     Returns list of matches with file path, line numbers, and content.
@@ -89,8 +107,10 @@ def search_codebase(indexed_files, query, max_results=5):
     keywords = re.findall(r'\b\w+\b', query_lower)
     
     # Filter out common stop words
-    stop_words = {'the', 'is', 'at', 'which', 'on', 'a', 'an', 'and', 'or', 'but', 'in', 'with', 'to', 'for', 'of', 'as', 'by', 'how', 'what', 'where', 'when', 'why', 'does', 'do'}
-    keywords = [kw for kw in keywords if kw not in stop_words and len(kw) > 2]
+    stop_words = {'the', 'is', 'at', 'on', 'a', 'an', 'and', 'or', 'but', 'in', 'to', 'for', 'of', 'as', 'by'}
+    # Keep technical abbreviations even if short
+    technical_terms = {'db', 'api', 'io', 'os', 'ai', 'ml', 'ci', 'cd', 'ui', 'ux', 'id', 'pr'}
+    keywords = [kw for kw in keywords if kw not in stop_words and (len(kw) > 2 or kw in technical_terms)]
     
     # If no valid keywords, return empty
     if not keywords:
@@ -107,30 +127,37 @@ def search_codebase(indexed_files, query, max_results=5):
         
         # Find specific line ranges that match
         matches = []
-        seen_ranges = set()  # Track ranges to avoid duplicates
+        seen_ranges = []  # Track ranges to avoid duplicates/overlaps
         
         for i, line in enumerate(lines):
             line_lower = line.lower()
             if any(kw in line_lower for kw in keywords):
-                # Get context (5 lines before and after)
-                start_line = max(0, i - 5)
-                end_line = min(len(lines), i + 6)
+                # Get context (CONTEXT_LINES before and after)
+                start_line = max(0, i - CONTEXT_LINES)
+                # end_line for slicing (exclusive in Python, so add 1 to include target line + context)
+                end_line_exclusive = min(len(lines), i + CONTEXT_LINES + 1)
+                # Convert to 1-indexed inclusive for GitHub permalink
+                # Python slice [start:end] is exclusive of end, so for lines[0:11] we get indices 0-10
+                # GitHub #L1-L11 shows lines 1-11, so end_line_inclusive should be end_line_exclusive
+                end_line_inclusive = end_line_exclusive  # GitHub uses 1-indexed, same number works
                 
                 # Check if this range overlaps with existing ones
-                range_key = (file_path, start_line, end_line)
-                if range_key in seen_ranges:
+                # Use 0-indexed exclusive ranges for consistency
+                current_range = (start_line, end_line_exclusive)
+                if any(ranges_overlap(current_range, (r['start_line'] - 1, r['end_line'])) 
+                       for r in seen_ranges if r['file'] == file_path):
                     continue
-                seen_ranges.add(range_key)
                 
                 match = {
                     'file': file_path,
-                    'start_line': start_line + 1,  # 1-indexed for GitHub
-                    'end_line': end_line,  # Already correct (min(len(lines), i+6) gives us the right exclusive end)
+                    'start_line': start_line + 1,  # Convert to 1-indexed for GitHub
+                    'end_line': end_line_inclusive,  # Already correct for GitHub permalink
                     'matched_line': i + 1,
-                    'snippet': '\n'.join(lines[start_line:end_line]),
+                    'snippet': '\n'.join(lines[start_line:end_line_exclusive]),
                     'relevance': relevance_score
                 }
                 matches.append(match)
+                seen_ranges.append(match)
         
         # Add top matches from this file
         if matches:
@@ -156,14 +183,27 @@ def generate_permalink(repo_owner, repo_name, branch, file_path, start_line, end
 def get_repository_structure(indexed_files):
     """Get a summary of the repository structure"""
     structure = {}
-    for file_path in indexed_files.keys():
+    for file_path in indexed_files:  # Iterate dict keys directly
         parts = Path(file_path).parts
+        if not parts or len(parts) == 0:  # Skip empty paths
+            continue
         current = structure
-        for part in parts[:-1]:
+        # Traverse all parent directories
+        for i, part in enumerate(parts[:-1]):
+            if not part:  # Skip empty parts
+                continue
             if part not in current:
                 current[part] = {}
+            elif not isinstance(current[part], dict):
+                # This is a file, not a directory - cannot descend
+                existing_file = '/'.join(parts[:i+1])
+                print(f"⚠️ Path conflict: {existing_file} is a file, cannot add {file_path} inside it", file=sys.stderr)
+                break
             current = current[part]
-        current[parts[-1]] = None
+        else:
+            # Only set leaf if we successfully traversed all parent directories
+            if parts[-1]:  # Only add if last part is not empty
+                current[parts[-1]] = None
     return structure
 
 
@@ -248,12 +288,12 @@ Please answer the question using the code references above. Include the permalin
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ],
-            model=os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+            model=os.getenv('GROQ_MODEL', MODEL_COMMUNITY_QA),
             max_tokens=2048,
             temperature=0.3
         )
         
-        if not response.choices or len(response.choices) == 0:
+        if not response.choices:
             raise ValueError("No response from LLM")
         
         content = response.choices[0].message.content
@@ -277,9 +317,33 @@ def post_comment(token, repo, issue_number, body):
         'User-Agent': 'Repogent-Bot/1.0'
     }
     
-    response = requests.post(url, headers=headers, json={'body': body}, timeout=30)
-    response.raise_for_status()
-    return response.json()
+    try:
+        response = requests.post(url, headers=headers, json={'body': body}, timeout=HTTP_TIMEOUT_SECONDS)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.Timeout:
+        print(f"Error posting comment: timeout after {HTTP_TIMEOUT_SECONDS}s")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"Error posting comment: {e}")
+        return None
+    except json.JSONDecodeError as e:
+        print(f"Error decoding response: {e}")
+        return None
+
+
+def is_bot_user(username: str, user_type: str = '') -> bool:
+    """Consistently detect bot users across all scripts"""
+    if user_type == 'Bot':
+        return True
+    # Defensive check: ensure username is not None or empty
+    if not username:
+        return False
+    if username.endswith('[bot]'):
+        return True
+    # Whitelist known bot patterns (more specific than substring matching)
+    bot_names = ['github-actions', 'dependabot', 'renovate', 'greenkeeper', 'codecov', 'repogent']
+    return any(bot in username.lower() for bot in bot_names)
 
 
 def extract_question(comment_body):
@@ -301,16 +365,31 @@ def main():
     groq_api_key = os.environ.get('GROQ_API_KEY')
     github_token = os.environ.get('GITHUB_TOKEN')
     repo = os.environ.get('GITHUB_REPOSITORY')
-    issue_number = os.environ.get('ISSUE_NUMBER')
+    issue_number_str = os.environ.get('ISSUE_NUMBER')
     comment_body = os.environ.get('COMMENT_BODY', '')
     comment_author = os.environ.get('COMMENT_AUTHOR', '')
     
-    if not all([groq_api_key, github_token, repo, issue_number]):
+    # Validate and convert issue_number
+    try:
+        issue_number = int(issue_number_str) if issue_number_str else None
+        if not issue_number or issue_number <= 0:
+            print("Invalid issue number", file=sys.stderr)
+            sys.exit(1)
+    except (ValueError, TypeError):
+        print(f"Invalid issue number format: {issue_number_str}", file=sys.stderr)
+        sys.exit(1)
+    
+    if not all([groq_api_key, github_token, repo]):
         print("Missing required environment variables", file=sys.stderr)
         sys.exit(1)
     
-    # Skip if comment is from a bot
-    if comment_author and ('bot' in comment_author.lower() or comment_author == 'github-actions[bot]'):
+    # Skip if comment is from a bot (use consistent detection)
+    # Check for None, empty string, or bot user
+    if not comment_author or not comment_author.strip():
+        print("Comment author is empty, skipping", file=sys.stderr)
+        sys.exit(0)
+    
+    if is_bot_user(comment_author):
         print("Comment is from a bot, skipping to avoid loops", file=sys.stderr)
         sys.exit(0)
     
@@ -327,17 +406,23 @@ def main():
     
     print(f"🤖 Processing question: {question}", file=sys.stderr)
     
-    # Parse repo info with validation
+    # Parse repo info with comprehensive validation
     if '/' not in repo:
         print(f"❌ Invalid repository format: {repo}", file=sys.stderr)
         sys.exit(1)
     
     repo_parts = repo.split('/')
-    if len(repo_parts) != 2:
-        print(f"❌ Invalid repository format: {repo}", file=sys.stderr)
+    if len(repo_parts) != 2 or not all(repo_parts):
+        print(f"❌ Invalid repository format (expected 'owner/repo'): {repo}", file=sys.stderr)
         sys.exit(1)
     
-    repo_owner, repo_name = repo_parts[0], repo_parts[1]
+    repo_owner, repo_name = repo_parts
+    
+    # Additional validation: GitHub usernames/repos must be alphanumeric with hyphens/underscores/dots
+    if not re.match(r'^[\w-]+$', repo_owner) or not re.match(r'^[\w.-]+$', repo_name):
+        print(f"❌ Invalid GitHub repository format: {repo}", file=sys.stderr)
+        sys.exit(1)
+    
     branch = os.environ.get('GITHUB_REF_NAME', 'main')
     
     # Initialize Groq client
@@ -362,8 +447,8 @@ def main():
 *Powered by Groq AI*"""
     
     # Limit response length
-    if len(formatted_response) > 65000:
-        formatted_response = formatted_response[:65000] + "\n\n... (response truncated)"
+    if len(formatted_response) > MAX_RESPONSE_LENGTH:
+        formatted_response = formatted_response[:MAX_RESPONSE_LENGTH] + "\n\n... (response truncated)"
     
     # Post comment
     try:
@@ -374,6 +459,18 @@ def main():
         sys.exit(1)
     
     print(f"🎉 Successfully answered question in issue #{issue_number}", file=sys.stderr)
+    
+    # Log to orchestrator
+    try:
+        import agent_comms
+        agent_comms.log_decision('community_assistant', {
+            'action': 'answered_question',
+            'issue_number': issue_number,
+            'question_length': len(question),
+            'files_searched': len(indexed_files)
+        })
+    except Exception:
+        pass  # Don't fail if orchestrator unavailable
 
 
 if __name__ == '__main__':

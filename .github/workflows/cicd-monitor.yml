@@ -1,0 +1,64 @@
+name: CI/CD Monitor
+
+on:
+  workflow_run:
+    workflows: ["*"]  # Monitor all workflows
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    name: CI/CD Monitoring Agent
+    # Only run on failures AND prevent self-triggering
+    if: ${{ github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.name != 'CI/CD Monitor' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Download Previous Context
+        uses: actions/download-artifact@v3
+        continue-on-error: true
+        with:
+          name: orchestrator-context
+          path: .repogent/
+      
+      - name: Analyze Build Failure
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          python scripts/cicd_agent.py
+      
+      - name: Notify PR Reviewer
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python scripts/pr_reviewer_enhanced.py
+      
+      - name: Upload Analysis Artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: cicd-analysis
+          path: .repogent/
+          retention-days: 7

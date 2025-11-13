@@ -15,10 +15,16 @@ jobs:
     runs-on: ubuntu-latest
     name: Issue Management
     
-    # Skip if comment is from bot itself or mentions @repogent (handled by community assistant)
+    # Skip if:
+    # - Comment is from bot (prevent infinite loops)
+    # - Comment mentions @repogent (handled by community assistant workflow)
+    # - Comment contains [skip-triage] marker
     if: |
       (github.event_name == 'issues') ||
-      (github.event_name == 'issue_comment' && !contains(github.event.comment.user.login, 'bot') && !contains(github.event.comment.body, '@repogent'))
+      (github.event_name == 'issue_comment' && 
+       !contains(github.event.comment.user.login, 'bot') && 
+       !contains(github.event.comment.body, '@repogent') &&
+       !contains(github.event.comment.body, '[skip-triage]'))
     
     steps:
       - name: Checkout code
@@ -57,3 +63,8 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
           python scripts/respond_to_comment.py
+
+# Note: This workflow coordinates with community-assistant.yml
+# - If comment contains @repogent -> community-assistant.yml handles it
+# - Otherwise -> this workflow (issue-triage.yml) handles it
+# This prevents duplicate responses through mutually exclusive conditions

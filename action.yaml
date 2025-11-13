@@ -137,12 +137,9 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
         ISSUE_NUMBER: ${{ github.event.issue.number }}
         COMMENT_BODY: ${{ github.event.comment.body }}
+        COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
         ISSUE_TITLE: ${{ github.event.issue.title }}
         ISSUE_BODY: ${{ github.event.issue.body }}
       run: |
-        # Skip if comment is from bot
-        if [[ "${{ github.event.comment.user.login }}" == *"bot"* ]]; then
-          echo "Skipping bot comment"
-          exit 0
-        fi
+        # Bot detection is handled in Python script for consistency
         python ${{ github.action_path }}/scripts/respond_to_comment.py

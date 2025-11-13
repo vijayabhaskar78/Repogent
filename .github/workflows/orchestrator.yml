@@ -1,0 +1,53 @@
+name: Orchestrator
+
+on:
+  workflow_run:
+    workflows: ["*"]
+    types: [completed]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  issues:
+    types: [opened, closed]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-latest
+    name: Central Orchestrator
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Run Orchestrator
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: |
+          python scripts/orchestrator.py
+      
+      - name: Upload Context Artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: orchestrator-context
+          path: .repogent/
+          retention-days: 7

@@ -15,10 +15,17 @@ jobs:
     runs-on: ubuntu-latest
     name: Community Q&A Assistant
     
-    # Only run if comment mentions @repogent
+    # Only run if:
+    # - Comment/issue mentions @repogent (case-insensitive)
+    # - NOT from a bot user (prevent infinite loops)
+    # This workflow has priority over issue-triage when @repogent is mentioned
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@repogent')) ||
-      (github.event_name == 'issues' && contains(github.event.issue.body, '@repogent'))
+      (github.event_name == 'issue_comment' && 
+       contains(github.event.comment.body, '@repogent') &&
+       !contains(github.event.comment.user.login, 'bot')) ||
+      (github.event_name == 'issues' && 
+       contains(github.event.issue.body, '@repogent') &&
+       !contains(github.event.issue.user.login, 'bot'))
     
     steps:
       - name: Checkout code
@@ -60,3 +67,8 @@ jobs:
           COMMENT_AUTHOR: ${{ github.event.issue.user.login }}
         run: |
           python scripts/community_assistant.py
+
+# Note: This workflow coordinates with issue-triage.yml
+# - If comment/issue mentions @repogent -> this workflow handles it (priority)
+# - Otherwise -> issue-triage.yml handles it
+# This prevents duplicate responses through mutually exclusive conditions

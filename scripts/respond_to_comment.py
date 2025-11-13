@@ -8,6 +8,30 @@ import sys
 import json
 from groq import Groq
 
+# Import shared constants
+from config_constants import (
+    MAX_CONVERSATION_CONTEXT,
+    HTTP_TIMEOUT_SECONDS,
+    MODEL_COMMENT_RESPONSE
+)
+
+# Local constants
+MAX_RESPONSE_LENGTH = 5000  # Maximum response length
+
+def is_bot_user(username: str, user_type: str = '') -> bool:
+    """Consistently detect bot users across all scripts"""
+    if user_type == 'Bot':
+        return True
+    # Defensive check: ensure username is not None or empty
+    if not username:
+        return False
+    if username.endswith('[bot]'):
+        return True
+    # Whitelist known bot patterns (more specific than substring matching)
+    bot_names = ['github-actions', 'dependabot', 'renovate', 'greenkeeper', 'codecov', 'repogent']
+    return any(bot in username.lower() for bot in bot_names)
+
+
 def get_issue_comments(token, repo, issue_number):
     """Get all comments from the issue, excluding bot comments"""
     import requests
@@ -19,10 +43,19 @@ def get_issue_comments(token, repo, issue_number):
         'User-Agent': 'Repogent-Bot/1.0'
     }
     
-    response = requests.get(url, headers=headers, timeout=30)
-    response.raise_for_status()
-    
-    comments = response.json()
+    try:
+        response = requests.get(url, headers=headers, timeout=HTTP_TIMEOUT_SECONDS)
+        response.raise_for_status()
+        comments = response.json()
+    except requests.exceptions.Timeout:
+        print(f"Error fetching issue comments: timeout after {HTTP_TIMEOUT_SECONDS}s")
+        return []
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching issue comments: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        print(f"Error decoding comments response: {e}")
+        return []
     conversation = []
     for comment in comments:
         # Safe dict access with validation
@@ -34,11 +67,12 @@ def get_issue_comments(token, repo, issue_number):
             continue
             
         author = user.get('login', 'unknown')
+        user_type = user.get('type', '')
         body = comment.get('body', '')
         created_at = comment.get('created_at', '')
         
-        # Skip bot comments to avoid circular context
-        if 'bot' not in author.lower() and author != 'github-actions[bot]':
+        # Use consistent bot detection
+        if not is_bot_user(author, user_type):
             conversation.append({
                 'author': author,
                 'body': body,
@@ -52,9 +86,15 @@ def generate_response(client, issue_title, issue_body, comment_body, conversatio
     # Build conversation context
     context = f"Issue Title: {issue_title}\n\nIssue Description:\n{issue_body}\n\n"
     
-    if conversation_history:
+    # Exclude the most recent comment (the one we're responding to) to avoid duplication
+    if conversation_history and conversation_history[-1].get('body') == comment_body:
+        context_history = conversation_history[:-1]
+    else:
+        context_history = conversation_history
+    
+    if context_history:
         context += "Previous Comments:\n"
-        for msg in conversation_history[-5:]:  # Last 5 comments
+        for msg in context_history[-MAX_CONVERSATION_CONTEXT:]:
             author = msg.get('author', 'unknown')
             body = msg.get('body', '')
             # Safely slice with bounds check
@@ -85,12 +125,12 @@ Please provide a helpful response to this comment."""
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ],
-            model=os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+            model=os.getenv('GROQ_MODEL', MODEL_COMMENT_RESPONSE),
             max_tokens=1024,
             temperature=0.7
         )
         
-        if not response.choices or len(response.choices) == 0:
+        if not response.choices:
             print(f"⚠️ No response choices from LLM", file=sys.stderr)
             return None
         
@@ -116,23 +156,54 @@ def post_comment(token, repo, issue_number, body):
         'User-Agent': 'Repogent-Bot/1.0'
     }
     
-    response = requests.post(url, headers=headers, json={'body': body}, timeout=30)
-    response.raise_for_status()
-    return response.json()
+    try:
+        response = requests.post(url, headers=headers, json={'body': body}, timeout=HTTP_TIMEOUT_SECONDS)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.Timeout:
+        print(f"Error posting comment: timeout after {HTTP_TIMEOUT_SECONDS}s")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"Error posting comment: {e}")
+        return None
+    except json.JSONDecodeError as e:
+        print(f"Error decoding post response: {e}")
+        return None
 
 def main():
     # Get environment variables
     groq_api_key = os.environ.get('GROQ_API_KEY')
     github_token = os.environ.get('GITHUB_TOKEN')
     repo = os.environ.get('GITHUB_REPOSITORY')
-    issue_number = os.environ.get('ISSUE_NUMBER')
+    issue_number_str = os.environ.get('ISSUE_NUMBER')
     comment_body = os.environ.get('COMMENT_BODY', '')
+    comment_author = os.environ.get('COMMENT_AUTHOR', '')
     issue_title = os.environ.get('ISSUE_TITLE', '')
     issue_body = os.environ.get('ISSUE_BODY', '')
     
-    if not all([groq_api_key, github_token, repo, issue_number, comment_body]):
+    # Validate and convert issue_number
+    try:
+        issue_number = int(issue_number_str) if issue_number_str else None
+        if not issue_number or issue_number <= 0:
+            print("Invalid issue number", file=sys.stderr)
+            sys.exit(1)
+    except (ValueError, TypeError):
+        print(f"Invalid issue number format: {issue_number_str}", file=sys.stderr)
+        sys.exit(1)
+    
+    if not all([groq_api_key, github_token, repo, comment_body]):
         print("Missing required environment variables", file=sys.stderr)
         sys.exit(1)
+    
+    # Skip if comment is from a bot (use consistent detection)
+    # Check for None, empty string, or bot user
+    if not comment_author or not comment_author.strip():
+        print("Comment author is empty, skipping", file=sys.stderr)
+        sys.exit(0)
+    
+    if is_bot_user(comment_author):
+        print("Comment is from a bot, skipping to avoid loops", file=sys.stderr)
+        sys.exit(0)
     
     # Initialize Groq client
     client = Groq(api_key=groq_api_key)
@@ -154,8 +225,8 @@ def main():
         sys.exit(1)
     
     # Limit response length to prevent abuse
-    if len(response_text) > 5000:
-        response_text = response_text[:5000] + "\n\n... (response truncated for length)"
+    if len(response_text) > MAX_RESPONSE_LENGTH:
+        response_text = response_text[:MAX_RESPONSE_LENGTH] + "\n\n... (response truncated for length)"
     
     # Format response with signature
     formatted_response = f"""{response_text}
